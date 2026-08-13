@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Système de Pointage QR Code</title>
+  <script>
+    // Garder la valeur déjà définie si elle a été configurée ailleurs.
+    window.API_URL = window.API_URL || 'https://script.google.com/macros/s/AKfycbxZJO9eReVbPkHnkBBL6W8_M5CbJBsZk-EORaDjAGC6FrocTxr_rw1RC7Ea12nk1UIy/exec';
+  </script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📱 Pointage QR Code</h1>
+      <p>Scannez votre QR code ou entrez le matricule</p>
+    </div>
+
+    <!-- Statistiques -->
+    <div id="stats" class="stats-container">
+      <div class="stat-item">
+        <span class="stat-number" id="total-employes">0</span>
+        <span class="stat-label">Employés</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number" id="present-aujourdhui">0</span>
+        <span class="stat-label">Présents</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-number" id="absent-aujourdhui">0</span>
+        <span class="stat-label">Absents</span>
+      </div>
+    </div>
+
+    <div id="permission-info">
+      <p>🔒 <strong>Autorisation caméra requise</strong><br>
+      Si la caméra ne fonctionne pas, utilisez le champ ci-dessous pour entrer le matricule manuellement.</p>
+    </div>
+
+    <!-- Entrée manuelle -->
+    <div class="manual-input">
+      <input type="text" id="matricule-manuel" placeholder="Entrez le matricule (ex: EMP001)" />
+      <button class="btn btn-success" onclick="entrerManuellement()">✅ Pointer</button>
+    </div>
+
+    <!-- Scanner QR -->
+    <div id="reader"></div>
+    <div id="result"></div>
+
+    <!-- Bouton pour redémarrer le scanner -->
+    <button class="btn btn-secondary" onclick="redemarrerScanner()" id="btn-redemarrer" style="display:none;">
+      📷 Scanner un autre QR
+    </button>
+
+    <!-- Rapport du jour -->
+    <div class="rapport-section">
+      <h3>📊 Présences du jour</h3>
+      <div id="rapport-jour">
+        <p style="color: #666; text-align: center;">Chargement...</p>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>Version 1.3 - Système de pointage par QR Code</p>
+    </div>
+  </div>
+
+  <!-- Script Html5Qrcode -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
