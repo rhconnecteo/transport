@@ -95,11 +95,7 @@
                         return;
                     }
 
-                    if (!statut.estPresent) {
-                        afficherErreur('⚠️ Cette personne n\'a pas encore validé l\'entrée');
-                        return;
-                    }
-
+                    // For 'sortie' mode: always attempt to record sortie (even if no entry exists)
                     enregistrerSortieBackend(matricule);
                 })
                 .withFailureHandler(function(error){ afficherErreur('Erreur: ' + (error.message || error)); })
@@ -116,21 +112,17 @@
                     return;
                 }
 
-                if (selectedMode === 'entree') {
-                    if (statut.estPresent) {
-                        afficherErreur('⚠️ Cette personne a déjà fait l\'entrée aujourd\'hui');
-                    } else {
-                        callApi('entree', matricule, function(response){ handleResult(response, 'entrée'); }, function(err){ afficherErreur('Erreur API: ' + (err && err.message ? err.message : 'Impossible de contacter le backend')); });
+                    if (selectedMode === 'entree') {
+                        if (statut.estPresent) {
+                            afficherErreur('⚠️ Cette personne a déjà fait l\'entrée aujourd\'hui');
+                        } else {
+                            callApi('entree', matricule, function(response){ handleResult(response, 'entrée'); }, function(err){ afficherErreur('Erreur API: ' + (err && err.message ? err.message : 'Impossible de contacter le backend')); });
+                        }
+                        return;
                     }
-                    return;
-                }
 
-                if (!statut.estPresent) {
-                    afficherErreur('⚠️ Cette personne n\'a pas encore validé l\'entrée');
-                    return;
-                }
-
-                callApi('sortie', matricule, function(response){ handleResult(response, 'sortie'); }, function(err){ afficherErreur('Erreur API: ' + (err && err.message ? err.message : 'Impossible de contacter le backend')); });
+                    // For 'sortie' mode: allow registering sortie even if no entry exists today
+                    callApi('sortie', matricule, function(response){ handleResult(response, 'sortie'); }, function(err){ afficherErreur('Erreur API: ' + (err && err.message ? err.message : 'Impossible de contacter le backend')); });
             }, function(error){
                 afficherErreur('Erreur API: ' + (error && error.message ? error.message : 'Impossible de contacter le backend'));
             });

@@ -471,6 +471,7 @@ function enregistrerSortie(matricule) {
     var normalizedMatricule = normalizeText(matricule);
     var targetRowIndex = -1;
 
+    // Prefer updating an open entry row (entry today with empty sortie)
     for (var i = data.length - 1; i >= 1; i--) {
       var row = data[i];
       if (normalizeText(row[0]) === normalizedMatricule && formatCellDate(row[1]) === today && (formatCellDate(row[3]) === '' || formatCellDate(row[3]) == null)) {
@@ -479,56 +480,51 @@ function enregistrerSortie(matricule) {
       }
     }
 
-    if (targetRowIndex === -1) {
-      // Try to find any row for today to provide a clearer message
-      var anyIdx = -1;
-      for (var k = data.length - 1; k >= 1; k--) {
-        var rr = data[k];
-        if (normalizeText(rr[0]) !== normalizedMatricule) continue;
-        if (formatCellDate(rr[1]) === today) {
-          anyIdx = k;
-          break;
-        }
-      }
-
-      if (anyIdx !== -1) {
-        var anyRow = data[anyIdx];
-        var sortieVal = formatCellDate(anyRow[3]);
-        if (sortieVal && sortieVal !== '') {
-          return {
-            success: false,
-            message: '⚠️ ' + (employee.row[1] || '') + " a déjà validé la sortie aujourd'hui (" + sortieVal + ")",
-            matricule: employee.row[0],
-            nom: employee.row[1] || ''
-          };
-        }
-        // If entry exists but loop didn't find it due to format issues, still indicate entry exists
-        return {
-          success: false,
-          message: '⚠️ ' + (employee.row[1] || '') + " a une entrée aujourd'hui mais la ligne n'a pas pu être mise à jour automatiquement.",
-          matricule: employee.row[0],
-          nom: employee.row[1] || ''
-        };
-      }
-
-      return {
-        success: false,
-        message: '⚠️ ' + (employee.row[1] || '') + " n'a pas encore validé l'entrée aujourd'hui",
-        matricule: employee.row[0],
-        nom: employee.row[1] || ''
-      };
-    }
-
     var now = new Date();
     var dateStr = Utilities.formatDate(now, CONFIG.TIMEZONE, 'dd/MM/yyyy');
     var heureStr = Utilities.formatDate(now, CONFIG.TIMEZONE, 'HH:mm:ss');
 
-    sheet.getRange(targetRowIndex, 4).setValue(dateStr);
-    sheet.getRange(targetRowIndex, 5).setValue(heureStr);
+    if (targetRowIndex !== -1) {
+      // Update existing row
+      sheet.getRange(targetRowIndex, 4).setValue(dateStr);
+      sheet.getRange(targetRowIndex, 5).setValue(heureStr);
+      return {
+        success: true,
+        message: '✅ Sortie enregistrée',
+        matricule: employee.row[0],
+        nom: employee.row[1] || '',
+        fonction: employee.row[2] || '',
+        date: dateStr,
+        heure: heureStr
+      };
+    }
+
+    // If no open entry row, check if sortie already recorded today (prevent duplicate sortie)
+    for (var j = data.length - 1; j >= 1; j--) {
+      var rj = data[j];
+      if (normalizeText(rj[0]) !== normalizedMatricule) continue;
+      if (formatCellDate(rj[1]) === today && (formatCellDate(rj[3]) !== '' && formatCellDate(rj[3]) != null)) {
+        return {
+          success: false,
+          message: '⚠️ ' + (employee.row[1] || '') + " a déjà validé la sortie aujourd'hui (" + formatCellDate(rj[3]) + ")",
+          matricule: employee.row[0],
+          nom: employee.row[1] || ''
+        };
+      }
+    }
+
+    // Append a new row with empty entry and filled sortie
+    sheet.appendRow([
+      employee.row[0],
+      '',
+      '',
+      dateStr,
+      heureStr
+    ]);
 
     return {
       success: true,
-      message: '✅ Sortie enregistrée',
+      message: '✅ Sortie enregistrée (sans entrée)',
       matricule: employee.row[0],
       nom: employee.row[1] || '',
       fonction: employee.row[2] || '',
