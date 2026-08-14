@@ -313,28 +313,46 @@ function verifierStatut(matricule) {
     var today = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd/MM/yyyy');
     var normalizedMatricule = normalizeText(matricule);
     var foundRow = null;
+    var foundIndex = -1;
 
     for (var i = data.length - 1; i >= 1; i--) {
       var row = data[i];
       if (normalizeText(row[0]) !== normalizedMatricule) continue;
-      if (normalizeText(row[1]) === today && normalizeText(row[3]) === '') {
+      var rowDateEntree = normalizeText(row[1]);
+      var rowDateSortie = normalizeText(row[3]);
+      console.log('verifierStatut: checking row', i + 1, 'matricule=', row[0], 'dateEntree=', rowDateEntree, 'dateSortie=', rowDateSortie);
+      if (rowDateEntree === today && rowDateSortie === '') {
         foundRow = row;
+        foundIndex = i;
         break;
       }
     }
 
     if (!foundRow) {
+      // Try to find any row for today to return useful info (e.g., sortie already enregistrée)
+      var anyRow = null;
+      var anyIndex = -1;
+      for (var j = data.length - 1; j >= 1; j--) {
+        var r = data[j];
+        if (normalizeText(r[0]) !== normalizedMatricule) continue;
+        if (normalizeText(r[1]) === today) {
+          anyRow = r;
+          anyIndex = j;
+          break;
+        }
+      }
+
       return {
         matricule: employee.row[0],
         nom: employee.row[1] || '',
         fonction: employee.row[2] || '',
         codeQr: employee.row[3] || '',
         estPresent: false,
-        dateEntree: '',
-        heureEntree: '',
-        dateSortie: '',
-        heureSortie: '',
-        ligne: 0
+        dateEntree: anyRow ? (anyRow[1] || '') : '',
+        heureEntree: anyRow ? (anyRow[2] || '') : '',
+        dateSortie: anyRow ? (anyRow[3] || '') : '',
+        heureSortie: anyRow ? (anyRow[4] || '') : '',
+        ligne: anyIndex !== -1 ? (anyIndex + 1) : 0
       };
     }
 
@@ -348,7 +366,7 @@ function verifierStatut(matricule) {
       heureEntree: foundRow[2] || '',
       dateSortie: foundRow[3] || '',
       heureSortie: foundRow[4] || '',
-      ligne: 0
+      ligne: foundIndex !== -1 ? (foundIndex + 1) : 0
     };
   } catch (error) {
     console.error('Erreur verifierStatut:', error);
