@@ -108,7 +108,9 @@
         }
 
         if (API_URL && API_URL.indexOf('REMPLACE_PAR_VOTRE_URL') === -1) {
-            callApi('scan', matricule, function(response){
+            // Envoyer l'action correspondant explicitement au mode sélectionné
+            var apiAction = (selectedMode === 'sortie') ? 'sortie' : 'entree';
+            callApi(apiAction, matricule, function(response){
                 if (response && response.success) {
                     handleResult(response, selectedMode === 'sortie' ? 'sortie' : 'entrée');
                 } else {
