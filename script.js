@@ -3,7 +3,7 @@
     var scanner = null;
     var isScanning = false;
     var selectedMode = 'entree';
-    var API_URL = (typeof window !== 'undefined' && window.API_URL) || 'https://script.google.com/macros/s/AKfycbzJspkAJrkXCbYgeWmCzpimXz1gaX45HYYtRfAypxWlLGB--eMLQ1HolPwGB9zM6ucH/exec';
+    var API_URL = (typeof window !== 'undefined' && window.API_URL) || 'https://script.google.com/macros/s/AKfycbwM-TpFpuFoUl6E7r6FOC9TotJ-8Kr9Z7N4pyntsQXMbbnrsWa-0qEk8SkW57nb0S8g/exec';
     var useBackend = (typeof google !== 'undefined' && google && google.script && google.script.run);
 
     function setMode(mode) {

@@ -53,6 +53,8 @@ function handleApiRequest(e, method) {
   var action = resolveAction(params);
   var matricule = String(params.matricule || params.codeQr || params.qr || params.code || '').trim();
 
+  console.log('API request action:', action, 'mode:', params.mode, 'matricule:', matricule);
+
   if (!action && !matricule) {
     return createCorsResponse({
       success: false,
@@ -122,7 +124,15 @@ function handleApiRequest(e, method) {
         if (!statutScan) {
           return createCorsResponse({ success: false, message: '❌ Matricule non trouvé dans la base Employe' });
         }
-        var result = statutScan.estPresent ? enregistrerSortie(matricule) : enregistrerEntree(matricule);
+        var forcedMode = String(params.mode || params.type || params.action || '').toLowerCase();
+        var result;
+        if (forcedMode === 'sortie' || forcedMode === 'checkout') {
+          result = enregistrerSortie(matricule);
+        } else if (forcedMode === 'entree' || forcedMode === 'checkin') {
+          result = enregistrerEntree(matricule);
+        } else {
+          result = statutScan.estPresent ? enregistrerSortie(matricule) : enregistrerEntree(matricule);
+        }
         return createCorsResponse(result);
 
       case 'stats':
@@ -144,7 +154,16 @@ function handleApiRequest(e, method) {
           if (!defaultStatut) {
             return createCorsResponse({ success: false, message: '❌ Matricule non trouvé dans la base Employe' });
           }
-          var defaultResult = defaultStatut.estPresent ? enregistrerSortie(matricule) : enregistrerEntree(matricule);
+
+          var forcedModeDefault = String(params.mode || params.type || params.action || '').toLowerCase();
+          var defaultResult;
+          if (forcedModeDefault === 'sortie' || forcedModeDefault === 'checkout') {
+            defaultResult = enregistrerSortie(matricule);
+          } else if (forcedModeDefault === 'entree' || forcedModeDefault === 'checkin') {
+            defaultResult = enregistrerEntree(matricule);
+          } else {
+            defaultResult = defaultStatut.estPresent ? enregistrerSortie(matricule) : enregistrerEntree(matricule);
+          }
           return createCorsResponse(defaultResult);
         }
 
