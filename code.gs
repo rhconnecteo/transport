@@ -233,6 +233,16 @@ function normalizeText(value) {
   return String(value == null ? '' : value).trim().replace(/\s+/g, ' ');
 }
 
+function formatCellDate(cell) {
+  if (cell == null || cell === '') return '';
+  try {
+    if (Object.prototype.toString.call(cell) === '[object Date]') {
+      return Utilities.formatDate(cell, CONFIG.TIMEZONE, 'dd/MM/yyyy');
+    }
+  } catch (e) {}
+  return String(cell).trim();
+}
+
 function getTodayDate() {
   return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd/MM/yyyy');
 }
@@ -318,10 +328,10 @@ function verifierStatut(matricule) {
     for (var i = data.length - 1; i >= 1; i--) {
       var row = data[i];
       if (normalizeText(row[0]) !== normalizedMatricule) continue;
-      var rowDateEntree = normalizeText(row[1]);
-      var rowDateSortie = normalizeText(row[3]);
+      var rowDateEntree = formatCellDate(row[1]);
+      var rowDateSortie = formatCellDate(row[3]);
       console.log('verifierStatut: checking row', i + 1, 'matricule=', row[0], 'dateEntree=', rowDateEntree, 'dateSortie=', rowDateSortie);
-      if (rowDateEntree === today && rowDateSortie === '') {
+      if (rowDateEntree === today && (rowDateSortie === '' || rowDateSortie == null)) {
         foundRow = row;
         foundIndex = i;
         break;
@@ -335,7 +345,7 @@ function verifierStatut(matricule) {
       for (var j = data.length - 1; j >= 1; j--) {
         var r = data[j];
         if (normalizeText(r[0]) !== normalizedMatricule) continue;
-        if (normalizeText(r[1]) === today) {
+        if (formatCellDate(r[1]) === today) {
           anyRow = r;
           anyIndex = j;
           break;
@@ -407,7 +417,7 @@ function enregistrerEntree(matricule) {
 
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
-      if (normalizeText(row[0]) === normalizedMatricule && normalizeText(row[1]) === today && normalizeText(row[3]) === '') {
+      if (normalizeText(row[0]) === normalizedMatricule && formatCellDate(row[1]) === today && (formatCellDate(row[3]) === '' || formatCellDate(row[3]) == null)) {
         return {
           success: false,
           message: '⚠️ ' + (employee.row[1] || '') + ' a déjà fait l\'entrée aujourd\'hui',
@@ -463,13 +473,44 @@ function enregistrerSortie(matricule) {
 
     for (var i = data.length - 1; i >= 1; i--) {
       var row = data[i];
-      if (normalizeText(row[0]) === normalizedMatricule && normalizeText(row[1]) === today && normalizeText(row[3]) === '') {
+      if (normalizeText(row[0]) === normalizedMatricule && formatCellDate(row[1]) === today && (formatCellDate(row[3]) === '' || formatCellDate(row[3]) == null)) {
         targetRowIndex = i + 1;
         break;
       }
     }
 
     if (targetRowIndex === -1) {
+      // Try to find any row for today to provide a clearer message
+      var anyIdx = -1;
+      for (var k = data.length - 1; k >= 1; k--) {
+        var rr = data[k];
+        if (normalizeText(rr[0]) !== normalizedMatricule) continue;
+        if (formatCellDate(rr[1]) === today) {
+          anyIdx = k;
+          break;
+        }
+      }
+
+      if (anyIdx !== -1) {
+        var anyRow = data[anyIdx];
+        var sortieVal = formatCellDate(anyRow[3]);
+        if (sortieVal && sortieVal !== '') {
+          return {
+            success: false,
+            message: '⚠️ ' + (employee.row[1] || '') + " a déjà validé la sortie aujourd'hui (" + sortieVal + ")",
+            matricule: employee.row[0],
+            nom: employee.row[1] || ''
+          };
+        }
+        // If entry exists but loop didn't find it due to format issues, still indicate entry exists
+        return {
+          success: false,
+          message: '⚠️ ' + (employee.row[1] || '') + " a une entrée aujourd'hui mais la ligne n'a pas pu être mise à jour automatiquement.",
+          matricule: employee.row[0],
+          nom: employee.row[1] || ''
+        };
+      }
+
       return {
         success: false,
         message: '⚠️ ' + (employee.row[1] || '') + " n'a pas encore validé l'entrée aujourd'hui",

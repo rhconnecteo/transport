@@ -3,7 +3,7 @@
     var scanner = null;
     var isScanning = false;
     var selectedMode = 'entree';
-    var API_URL = (typeof window !== 'undefined' && window.API_URL) || 'https://script.google.com/macros/s/AKfycbwM-TpFpuFoUl6E7r6FOC9TotJ-8Kr9Z7N4pyntsQXMbbnrsWa-0qEk8SkW57nb0S8g/exec';
+    var API_URL = (typeof window !== 'undefined' && window.API_URL) || 'https://script.google.com/macros/s/AKfycbxaZ_I39i8Wwdf56P-hriJF1J3d3gAiWrjRf1MCRmMt6eSwDVRJKkIocmwqR-7rwrYg/exec';
     var useBackend = (typeof google !== 'undefined' && google && google.script && google.script.run);
 
     function setMode(mode) {
@@ -108,14 +108,29 @@
         }
 
         if (API_URL && API_URL.indexOf('REMPLACE_PAR_VOTRE_URL') === -1) {
-            // Envoyer l'action correspondant explicitement au mode sélectionné
-            var apiAction = (selectedMode === 'sortie') ? 'sortie' : 'entree';
-            callApi(apiAction, matricule, function(response){
-                if (response && response.success) {
-                    handleResult(response, selectedMode === 'sortie' ? 'sortie' : 'entrée');
-                } else {
-                    afficherErreur((response && response.message) ? response.message : '❌ Matricule non trouvé dans la base');
+            // First fetch status to mirror google.script.run behavior and provide clearer messages
+            callApi('statut', matricule, function(statusResp){
+                var statut = (statusResp && statusResp.success && statusResp.data) ? statusResp.data : (statusResp || {});
+                if (!statut || !statut.matricule) {
+                    afficherErreur('❌ Matricule non trouvé dans la base');
+                    return;
                 }
+
+                if (selectedMode === 'entree') {
+                    if (statut.estPresent) {
+                        afficherErreur('⚠️ Cette personne a déjà fait l\'entrée aujourd\'hui');
+                    } else {
+                        callApi('entree', matricule, function(response){ handleResult(response, 'entrée'); }, function(err){ afficherErreur('Erreur API: ' + (err && err.message ? err.message : 'Impossible de contacter le backend')); });
+                    }
+                    return;
+                }
+
+                if (!statut.estPresent) {
+                    afficherErreur('⚠️ Cette personne n\'a pas encore validé l\'entrée');
+                    return;
+                }
+
+                callApi('sortie', matricule, function(response){ handleResult(response, 'sortie'); }, function(err){ afficherErreur('Erreur API: ' + (err && err.message ? err.message : 'Impossible de contacter le backend')); });
             }, function(error){
                 afficherErreur('Erreur API: ' + (error && error.message ? error.message : 'Impossible de contacter le backend'));
             });
