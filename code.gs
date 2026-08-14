@@ -3,7 +3,8 @@
 // ============================================
 var CONFIG = {
   SPREADSHEET_ID: '1JEWXzPYwZ60HWzFB0_BZJcBYmm0QQD29shP23WQ6BVg',
-  SHEET_NAME: 'Employe',
+  EMPLOYEE_SHEET_NAME: 'Employe',
+  PRESENCE_SHEET_NAME: 'Fiche de présence',
   TIMEZONE: 'Africa/Nairobi'
 };
 
@@ -70,6 +71,18 @@ function handleApiRequest(e, method) {
           timezone: CONFIG.TIMEZONE
         });
 
+      case 'ajouter':
+      case 'ajout':
+      case 'create':
+      case 'nouveau':
+        var nouveau = ajouterEmploye(
+          params.matricule,
+          params.nom,
+          params.fonction,
+          params.codeQr || params.code || '-'
+        );
+        return createCorsResponse(nouveau);
+
       case 'statut':
       case 'status':
         if (!matricule) {
@@ -99,9 +112,15 @@ function handleApiRequest(e, method) {
         if (!matricule) {
           return createCorsResponse({ success: false, message: 'Matricule manquant' });
         }
+
+        var employeScan = findEmployeeRow(matricule);
+        if (!employeScan) {
+          return createCorsResponse({ success: false, message: '❌ Matricule non trouvé dans la base Employe' });
+        }
+
         var statutScan = verifierStatut(matricule);
         if (!statutScan) {
-          return createCorsResponse({ success: false, message: '❌ Matricule non trouvé dans la base' });
+          return createCorsResponse({ success: false, message: '❌ Matricule non trouvé dans la base Employe' });
         }
         var result = statutScan.estPresent ? enregistrerSortie(matricule) : enregistrerEntree(matricule);
         return createCorsResponse(result);
@@ -116,9 +135,14 @@ function handleApiRequest(e, method) {
 
       default:
         if (matricule) {
+          var employeeDefault = findEmployeeRow(matricule);
+          if (!employeeDefault) {
+            return createCorsResponse({ success: false, message: '❌ Matricule non trouvé dans la base Employe' });
+          }
+
           var defaultStatut = verifierStatut(matricule);
           if (!defaultStatut) {
-            return createCorsResponse({ success: false, message: '❌ Matricule non trouvé dans la base' });
+            return createCorsResponse({ success: false, message: '❌ Matricule non trouvé dans la base Employe' });
           }
           var defaultResult = defaultStatut.estPresent ? enregistrerSortie(matricule) : enregistrerEntree(matricule);
           return createCorsResponse(defaultResult);
@@ -127,7 +151,7 @@ function handleApiRequest(e, method) {
         return createCorsResponse({
           success: false,
           message: 'Action inconnue.',
-          actions: ['ping', 'statut', 'entree', 'sortie', 'scan', 'stats', 'rapport']
+          actions: ['ping', 'ajouter', 'statut', 'entree', 'sortie', 'scan', 'stats', 'rapport']
         });
     }
   } catch (error) {
@@ -186,6 +210,10 @@ function createCorsResponse(payload) {
   return output;
 }
 
+function normalizeText(value) {
+  return String(value == null ? '' : value).trim().replace(/\s+/g, ' ');
+}
+
 function getTodayDate() {
   return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd/MM/yyyy');
 }
@@ -202,12 +230,12 @@ function include(filename) {
 }
 
 // ============================================
-// OBTENIR LA FEUILLE DE CALCUL
+// OBTENIR LES FEUILLES
 // ============================================
 function getSheet() {
   try {
     var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-    var sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+    var sheet = ss.getSheetByName(CONFIG.EMPLOYEE_SHEET_NAME);
     if (!sheet) {
       sheet = ss.getActiveSheet();
     }
@@ -218,6 +246,37 @@ function getSheet() {
   }
 }
 
+function getEmployeeSheet() {
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(CONFIG.EMPLOYEE_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.EMPLOYEE_SHEET_NAME);
+    sheet.appendRow(['Matricule', 'Nom et Prénoms', 'Fonction', 'Code QR']);
+  }
+  return sheet;
+}
+
+function getPresenceSheet() {
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(CONFIG.PRESENCE_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.PRESENCE_SHEET_NAME);
+    sheet.appendRow(['Matricule', 'Date d\'entrée', 'Heure d\'entrée', 'Date de sortie', 'Heure de sortie']);
+  }
+  return sheet;
+}
+
+function getEmployeeByMatricule(matricule) {
+  var found = findEmployeeRow(matricule);
+  if (!found) return null;
+  return {
+    matricule: found.row[0],
+    nom: found.row[1] || '',
+    fonction: found.row[2] || '',
+    codeQr: found.row[3] || ''
+  };
+}
+
 // ============================================
 // VÉRIFIER LE STATUT D'UN EMPLOYÉ
 // ============================================
@@ -226,27 +285,51 @@ function verifierStatut(matricule) {
     if (!matricule) {
       return null;
     }
-    // Supporte recherche par matricule OU par code QR (colonne 3)
-    var found = findEmployeeRow(matricule);
-    if (!found) return null;
 
-    var row = found.row;
-    var i = found.index;
-    var dateEntree = row[4] || '';
-    var dateSortie = row[6] || '';
-    var estPresent = (dateEntree !== '' && dateSortie === '');
+    var employee = findEmployeeRow(matricule);
+    if (!employee) return null;
+
+    var sheet = getPresenceSheet();
+    var data = sheet.getDataRange().getValues();
+    var today = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd/MM/yyyy');
+    var normalizedMatricule = normalizeText(matricule);
+    var foundRow = null;
+
+    for (var i = data.length - 1; i >= 1; i--) {
+      var row = data[i];
+      if (normalizeText(row[0]) !== normalizedMatricule) continue;
+      if (normalizeText(row[1]) === today && normalizeText(row[3]) === '') {
+        foundRow = row;
+        break;
+      }
+    }
+
+    if (!foundRow) {
+      return {
+        matricule: employee.row[0],
+        nom: employee.row[1] || '',
+        fonction: employee.row[2] || '',
+        codeQr: employee.row[3] || '',
+        estPresent: false,
+        dateEntree: '',
+        heureEntree: '',
+        dateSortie: '',
+        heureSortie: '',
+        ligne: 0
+      };
+    }
 
     return {
-      matricule: row[0],
-      nom: row[1] || '',
-      fonction: row[2] || '',
-      codeQr: row[3] || '',
-      estPresent: estPresent,
-      dateEntree: dateEntree,
-      heureEntree: row[5] || '',
-      dateSortie: dateSortie,
-      heureSortie: row[7] || '',
-      ligne: i + 1
+      matricule: employee.row[0],
+      nom: employee.row[1] || '',
+      fonction: employee.row[2] || '',
+      codeQr: employee.row[3] || '',
+      estPresent: true,
+      dateEntree: foundRow[1] || '',
+      heureEntree: foundRow[2] || '',
+      dateSortie: foundRow[3] || '',
+      heureSortie: foundRow[4] || '',
+      ligne: 0
     };
   } catch (error) {
     console.error('Erreur verifierStatut:', error);
@@ -257,39 +340,61 @@ function verifierStatut(matricule) {
 // ============================================
 // ENREGISTRER L'ENTRÉE
 // ============================================
+function appendPresenceRow(employeeRow, dateStr, heureStr) {
+  var sheet = getPresenceSheet();
+  sheet.appendRow([
+    employeeRow[0],
+    dateStr,
+    heureStr,
+    '',
+    ''
+  ]);
+  return true;
+}
+
 function enregistrerEntree(matricule) {
   try {
     if (!matricule) {
-      return {
-        success: false,
-        message: 'Matricule manquant'
-      };
+      return { success: false, message: 'Matricule manquant' };
     }
+
+    var employee = findEmployeeRow(matricule);
+    if (!employee) {
+      return { success: false, message: '❌ Matricule non trouvé dans la base Employe' };
+    }
+
+    var sheet = getPresenceSheet();
+    var data = sheet.getDataRange().getValues();
+    var today = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd/MM/yyyy');
+    var normalizedMatricule = normalizeText(matricule);
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      if (normalizeText(row[0]) === normalizedMatricule && normalizeText(row[1]) === today && normalizeText(row[3]) === '') {
+        return {
+          success: false,
+          message: '⚠️ ' + (employee.row[1] || '') + ' a déjà fait l\'entrée aujourd\'hui',
+          matricule: employee.row[0],
+          nom: employee.row[1] || ''
+        };
+      }
+    }
+
     var now = new Date();
-    var timezone = CONFIG.TIMEZONE;
-    var dateStr = Utilities.formatDate(now, timezone, 'dd/MM/yyyy');
-    var heureStr = Utilities.formatDate(now, timezone, 'HH:mm:ss');
+    var dateStr = Utilities.formatDate(now, CONFIG.TIMEZONE, 'dd/MM/yyyy');
+    var heureStr = Utilities.formatDate(now, CONFIG.TIMEZONE, 'HH:mm:ss');
 
-    // Rechercher la ligne par matricule ou par code QR
-    var found = findEmployeeRow(matricule);
-    if (!found) {
-      return { success: false, message: '❌ Matricule non trouvé' };
-    }
+    appendPresenceRow(employee.row, dateStr, heureStr);
 
-    var row = found.row;
-    var ligne = found.index + 1;
-
-    if (row[4] && row[4] !== '' && !row[6]) {
-      return { success: false, message: '⚠️ ' + row[1] + ' est déjà présent(e)', matricule: row[0], nom: row[1] || '' };
-    }
-
-    var sheet = getSheet();
-    sheet.getRange(ligne, 5).setValue(dateStr);
-    sheet.getRange(ligne, 6).setValue(heureStr);
-    sheet.getRange(ligne, 7).setValue('');
-    sheet.getRange(ligne, 8).setValue('');
-
-    return { success: true, message: '✅ Entrée enregistrée', matricule: row[0], nom: row[1] || '', fonction: row[2] || '', date: dateStr, heure: heureStr };
+    return {
+      success: true,
+      message: '✅ Entrée enregistrée',
+      matricule: employee.row[0],
+      nom: employee.row[1] || '',
+      fonction: employee.row[2] || '',
+      date: dateStr,
+      heure: heureStr
+    };
   } catch (error) {
     console.error('Erreur enregistrerEntree:', error);
     return {
@@ -305,35 +410,53 @@ function enregistrerEntree(matricule) {
 function enregistrerSortie(matricule) {
   try {
     if (!matricule) {
+      return { success: false, message: 'Matricule manquant' };
+    }
+
+    var employee = findEmployeeRow(matricule);
+    if (!employee) {
+      return { success: false, message: '❌ Matricule non trouvé dans la base Employe' };
+    }
+
+    var sheet = getPresenceSheet();
+    var data = sheet.getDataRange().getValues();
+    var today = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd/MM/yyyy');
+    var normalizedMatricule = normalizeText(matricule);
+    var targetRowIndex = -1;
+
+    for (var i = data.length - 1; i >= 1; i--) {
+      var row = data[i];
+      if (normalizeText(row[0]) === normalizedMatricule && normalizeText(row[1]) === today && normalizeText(row[3]) === '') {
+        targetRowIndex = i + 1;
+        break;
+      }
+    }
+
+    if (targetRowIndex === -1) {
       return {
         success: false,
-        message: 'Matricule manquant'
+        message: '⚠️ ' + (employee.row[1] || '') + " n'a pas encore validé l'entrée aujourd'hui",
+        matricule: employee.row[0],
+        nom: employee.row[1] || ''
       };
     }
+
     var now = new Date();
-    var timezone = CONFIG.TIMEZONE;
-    var dateStr = Utilities.formatDate(now, timezone, 'dd/MM/yyyy');
-    var heureStr = Utilities.formatDate(now, timezone, 'HH:mm:ss');
+    var dateStr = Utilities.formatDate(now, CONFIG.TIMEZONE, 'dd/MM/yyyy');
+    var heureStr = Utilities.formatDate(now, CONFIG.TIMEZONE, 'HH:mm:ss');
 
-    var found = findEmployeeRow(matricule);
-    if (!found) return { success: false, message: '❌ Matricule non trouvé' };
+    sheet.getRange(targetRowIndex, 4).setValue(dateStr);
+    sheet.getRange(targetRowIndex, 5).setValue(heureStr);
 
-    var row = found.row;
-    var ligne = found.index + 1;
-
-    if (row[6] && row[6] !== '') {
-      return { success: false, message: '⚠️ ' + row[1] + ' est déjà sorti(e)', matricule: row[0], nom: row[1] || '' };
-    }
-
-    if (!row[4] || row[4] === '') {
-      return { success: false, message: '⚠️ ' + row[1] + " n'a pas d'entrée enregistrée", matricule: row[0], nom: row[1] || '' };
-    }
-
-    var sheet = getSheet();
-    sheet.getRange(ligne, 7).setValue(dateStr);
-    sheet.getRange(ligne, 8).setValue(heureStr);
-
-    return { success: true, message: '✅ Sortie enregistrée', matricule: row[0], nom: row[1] || '', fonction: row[2] || '', date: dateStr, heure: heureStr };
+    return {
+      success: true,
+      message: '✅ Sortie enregistrée',
+      matricule: employee.row[0],
+      nom: employee.row[1] || '',
+      fonction: employee.row[2] || '',
+      date: dateStr,
+      heure: heureStr
+    };
   } catch (error) {
     console.error('Erreur enregistrerSortie:', error);
     return {
@@ -348,23 +471,30 @@ function enregistrerSortie(matricule) {
 // ============================================
 function getStatistiques() {
   try {
-    var sheet = getSheet();
-    var data = sheet.getDataRange().getValues();
+    var employeeSheet = getEmployeeSheet();
+    var employeeData = employeeSheet.getDataRange().getValues();
     var total = 0;
+
+    for (var i = 1; i < employeeData.length; i++) {
+      if (employeeData[i][0] && employeeData[i][0] !== '') total++;
+    }
+
+    var presenceSheet = getPresenceSheet();
+    var presenceData = presenceSheet.getDataRange().getValues();
     var present = 0;
-    var aujourdhui = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd/MM/yyyy');
+    var seen = {};
+    var today = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd/MM/yyyy');
 
-    for (var i = 1; i < data.length; i++) {
-      var row = data[i];
-      if (row[0] && row[0] !== '') {
-        total++;
+    for (var j = 1; j < presenceData.length; j++) {
+      var row = presenceData[j];
+      var matricule = String(row[0] || '').trim();
+      var dateEntree = String(row[1] || '').trim();
+      var dateSortie = String(row[3] || '').trim();
 
-        var dateEntree = row[4] || '';
-        var dateSortie = row[6] || '';
-
-        if (dateEntree !== '' && dateSortie === '') {
-          present++;
-        }
+      if (!matricule || dateEntree !== today || dateSortie !== '') continue;
+      if (!seen[matricule]) {
+        seen[matricule] = true;
+        present++;
       }
     }
 
@@ -372,7 +502,7 @@ function getStatistiques() {
       total: total,
       present: present,
       absent: total - present,
-      aujourdhui: aujourdhui
+      aujourdhui: today
     };
   } catch (error) {
     console.error('Erreur getStatistiques:', error);
@@ -390,28 +520,28 @@ function getStatistiques() {
 // ============================================
 function getRapportDuJour() {
   try {
-    var sheet = getSheet();
+    var sheet = getPresenceSheet();
     var data = sheet.getDataRange().getValues();
     var rapport = [];
     var aujourdhui = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd/MM/yyyy');
 
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
+      var matricule = String(row[0] || '').trim();
+      var dateEntree = String(row[1] || '').trim();
+      var dateSortie = String(row[3] || '').trim();
 
-      if (row[0] && row[0] !== '') {
-        var dateEntree = row[4] || '';
-        var dateSortie = row[6] || '';
-
-        if (dateEntree === aujourdhui || dateSortie === aujourdhui) {
-          rapport.push({
-            matricule: row[0],
-            nom: row[1] || '',
-            fonction: row[2] || '',
-            entre: dateEntree === aujourdhui ? row[5] || '' : '',
-            sortie: dateSortie === aujourdhui ? row[7] || '' : '',
-            present: (dateEntree === aujourdhui && dateSortie === '')
-          });
-        }
+      if (!matricule) continue;
+      if (dateEntree === aujourdhui || dateSortie === aujourdhui) {
+        var employee = getEmployeeByMatricule(matricule) || { nom: '', fonction: '' };
+        rapport.push({
+          matricule: matricule,
+          nom: employee.nom || '',
+          fonction: employee.fonction || '',
+          entre: dateEntree === aujourdhui ? row[2] || '' : '',
+          sortie: dateSortie === aujourdhui ? row[4] || '' : '',
+          present: (dateEntree === aujourdhui && dateSortie === '')
+        });
       }
     }
 
@@ -453,16 +583,75 @@ function findEmployeeRow(key) {
     if (!key) return null;
     var sheet = getSheet();
     var data = sheet.getDataRange().getValues();
+    var target = normalizeText(key);
+    var targetLower = target.toLowerCase();
 
     for (var i = 0; i < data.length; i++) {
       var row = data[i];
-      // colonne 0 = matricule, colonne 3 = code QR (si utilisé)
-      if (row[0] && row[0].toString() === key.toString()) return { row: row, index: i };
-      if (row[3] && row[3].toString() === key.toString()) return { row: row, index: i };
+      var matricule = row[0] ? normalizeText(row[0]) : '';
+      var codeQr = row[3] ? normalizeText(row[3]) : '';
+
+      if (matricule.toLowerCase() === targetLower || codeQr.toLowerCase() === targetLower) {
+        return { row: row, index: i };
+      }
     }
     return null;
   } catch (e) {
     console.error('Erreur findEmployeeRow:', e);
     return null;
+  }
+}
+
+function ajouterEmploye(matricule, nom, fonction, codeQr) {
+  try {
+    matricule = String(matricule || '').trim();
+    nom = String(nom || '').trim();
+    fonction = String(fonction || '').trim();
+    codeQr = String(codeQr || '-').trim();
+    var codeQrValide = (codeQr && codeQr !== '-') ? codeQr : '';
+
+    if (!matricule || !nom || !fonction) {
+      return { success: false, message: 'Matricule, nom et fonction sont obligatoires.' };
+    }
+
+    var existeMatricule = !!findEmployeeRow(matricule);
+    var existeCodeQr = !!(codeQrValide && findEmployeeRow(codeQrValide));
+
+    if (existeMatricule || existeCodeQr) {
+      return { success: false, message: '⚠️ Ce collaborateur existe déjà dans la base.' };
+    }
+
+    var now = new Date();
+    var dateCreation = Utilities.formatDate(now, CONFIG.TIMEZONE, 'dd/MM/yyyy');
+    var heureCreation = Utilities.formatDate(now, CONFIG.TIMEZONE, 'HH:mm:ss');
+
+    var sheet = getSheet();
+    sheet.appendRow([
+      matricule,
+      nom,
+      fonction,
+      codeQr,
+      '',
+      '',
+      '',
+      ''
+    ]);
+
+    return {
+      success: true,
+      message: '✅ Collaborateur ajouté avec succès',
+      matricule: matricule,
+      nom: nom,
+      fonction: fonction,
+      codeQr: codeQr,
+      date: dateCreation,
+      heure: heureCreation
+    };
+  } catch (error) {
+    console.error('Erreur ajouterEmploye:', error);
+    return {
+      success: false,
+      message: 'Erreur: ' + error.toString()
+    };
   }
 }

@@ -6,68 +6,74 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>Système de Pointage QR Code</title>
   <script>
-    // Garder la valeur déjà définie si elle a été configurée ailleurs.
-    window.API_URL = window.API_URL || 'https://script.google.com/macros/s/AKfycbxZJO9eReVbPkHnkBBL6W8_M5CbJBsZk-EORaDjAGC6FrocTxr_rw1RC7Ea12nk1UIy/exec';
+    window.API_URL = window.API_URL || 'https://script.google.com/macros/s/AKfycbzJspkAJrkXCbYgeWmCzpimXz1gaX45HYYtRfAypxWlLGB--eMLQ1HolPwGB9zM6ucH/exec';
   </script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>📱 Pointage QR Code</h1>
-      <p>Scannez votre QR code ou entrez le matricule</p>
-    </div>
-
-    <!-- Statistiques -->
-    <div id="stats" class="stats-container">
-      <div class="stat-item">
-        <span class="stat-number" id="total-employes">0</span>
-        <span class="stat-label">Employés</span>
+  <div class="app-shell">
+    <div class="container">
+      <div class="header">
+        <div class="badge">Secure Attendance</div>
+        <h1>Pointage employé</h1>
+        <p>Choisissez le type de scan puis validez le QR code ou le matricule.</p>
       </div>
-      <div class="stat-item">
-        <span class="stat-number" id="present-aujourdhui">0</span>
-        <span class="stat-label">Présents</span>
+
+      <div class="mode-panel">
+        <button class="mode-btn active" data-mode="entree" type="button">Entrée</button>
+        <button class="mode-btn" data-mode="sortie" type="button">Sortie</button>
       </div>
-      <div class="stat-item">
-        <span class="stat-number" id="absent-aujourdhui">0</span>
-        <span class="stat-label">Absents</span>
+
+      <div id="stats" class="stats-container">
+        <div class="stat-item">
+          <span class="stat-number" id="total-employes">0</span>
+          <span class="stat-label">Employés</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-number" id="present-aujourdhui">0</span>
+          <span class="stat-label">Présents</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-number" id="absent-aujourdhui">0</span>
+          <span class="stat-label">Absents</span>
+        </div>
       </div>
-    </div>
 
-    <div id="permission-info">
-      <p>🔒 <strong>Autorisation caméra requise</strong><br>
-      Si la caméra ne fonctionne pas, utilisez le champ ci-dessous pour entrer le matricule manuellement.</p>
-    </div>
-
-    <!-- Entrée manuelle -->
-    <div class="manual-input">
-      <input type="text" id="matricule-manuel" placeholder="Entrez le matricule (ex: EMP001)" />
-      <button class="btn btn-success" onclick="entrerManuellement()">✅ Pointer</button>
-    </div>
-
-    <!-- Scanner QR -->
-    <div id="reader"></div>
-    <div id="result"></div>
-
-    <!-- Bouton pour redémarrer le scanner -->
-    <button class="btn btn-secondary" onclick="redemarrerScanner()" id="btn-redemarrer" style="display:none;">
-      📷 Scanner un autre QR
-    </button>
-
-    <!-- Rapport du jour -->
-    <div class="rapport-section">
-      <h3>📊 Présences du jour</h3>
-      <div id="rapport-jour">
-        <p style="color: #666; text-align: center;">Chargement...</p>
+      <div id="permission-info">
+        <p>🔒 <strong>Autorisation caméra requise</strong><br>
+        Si la caméra ne fonctionne pas, utilisez le champ ci-dessous pour entrer le matricule manuellement.</p>
       </div>
-    </div>
 
-    <div class="footer">
-      <p>Version 1.3 - Système de pointage par QR Code</p>
+      <div class="employee-form">
+        <div class="form-grid">
+          <input type="text" id="matricule-nouveau" placeholder="Matricule" />
+          <input type="text" id="nom-nouveau" placeholder="Nom complet" />
+          <input type="text" id="fonction-nouveau" placeholder="Fonction" />
+          <input type="text" id="codeqr-nouveau" placeholder="Code QR" />
+        </div>
+        <button class="btn btn-success" id="btn-ajouter-employe" type="button">Ajouter collaborateur</button>
+      </div>
+
+      <div id="reader"></div>
+      <div id="result"></div>
+
+      <button class="btn btn-secondary" onclick="redemarrerScanner()" id="btn-redemarrer" style="display:none;">
+        Scanner un autre QR
+      </button>
+
+      <div class="rapport-section">
+        <h3>📊 Présences du jour</h3>
+        <div id="rapport-jour">
+          <p style="color: #666; text-align: center;">Chargement...</p>
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>Version 2.0 • Système de pointage par QR</p>
+      </div>
     </div>
   </div>
 
-  <!-- Script Html5Qrcode -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="script.js"></script>
 </body>

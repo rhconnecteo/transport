@@ -1,228 +1,385 @@
 // Frontend pour API Apps Script uniquement.
 ;(function(){
-	var scanner = null;
-	var scannerActif = false;
-	var isScanning = false;
+    var scanner = null;
+    var isScanning = false;
+    var selectedMode = 'entree';
+    var API_URL = (typeof window !== 'undefined' && window.API_URL) || 'https://script.google.com/macros/s/AKfycbzJspkAJrkXCbYgeWmCzpimXz1gaX45HYYtRfAypxWlLGB--eMLQ1HolPwGB9zM6ucH/exec';
+    var useBackend = (typeof google !== 'undefined' && google && google.script && google.script.run);
 
-	var API_URL = (typeof window !== 'undefined' && window.API_URL) || 'https://script.google.com/macros/s/AKfycbxZJO9eReVbPkHnkBBL6W8_M5CbJBsZk-EORaDjAGC6FrocTxr_rw1RC7Ea12nk1UIy/exec';
+    function setMode(mode) {
+        selectedMode = (mode === 'sortie') ? 'sortie' : 'entree';
+        var buttons = document.querySelectorAll('.mode-btn');
+        buttons.forEach(function(btn){
+            btn.classList.toggle('active', btn.getAttribute('data-mode') === selectedMode);
+        });
+    }
 
-	function nowDate() {
-		var d = new Date();
-		return d.toLocaleDateString('fr-FR');
-	}
+    function getModeLabel() {
+        return selectedMode === 'sortie' ? 'Sortie' : 'Entrée';
+    }
 
-	function nowTime() {
-		var d = new Date();
-		return d.toLocaleTimeString('fr-FR');
-	}
+    function verifierPermissionsCamera(){
+        if (!navigator.permissions) return;
+        navigator.permissions.query({name:'camera'}).then(function(r){
+            if (r.state === 'denied') {
+                var info = document.getElementById('permission-info');
+                if (info) info.style.display = 'block';
+            }
+        }).catch(function(){});
+    }
 
-	// Permissions camera
-	function verifierPermissionsCamera(){ if (!navigator.permissions) return; navigator.permissions.query({name:'camera'}).then(function(r){ if (r.state==='denied') document.getElementById('permission-info').style.display='block'; }).catch(()=>{}); }
+    function demarrerScanner(){
+        if (typeof Html5QrcodeScanner === 'undefined') {
+            document.getElementById('reader').innerHTML = '<div style="padding:20px;color:#ef4444;text-align:center;">Bibliothèque QR introuvable</div>';
+            return;
+        }
+        if (scanner) {
+            try { scanner.clear(); } catch(e) {}
+            scanner = null;
+        }
+        document.getElementById('result').innerHTML = '';
+        document.getElementById('btn-redemarrer').style.display = 'none';
+        try {
+            scanner = new Html5QrcodeScanner('reader', { qrbox: { width: 250, height: 250 }, fps: 20 });
+            scanner.render(onScanSuccess, onScanError);
+            isScanning = true;
+        } catch (e) {
+            document.getElementById('reader').innerHTML = '<div style="padding:20px;color:#ef4444;text-align:center;">Erreur démarrage scanner</div>';
+        }
+    }
 
-	// Détecter si Apps Script backend est disponible
-	var useBackend = (typeof google !== 'undefined' && google && google.script && google.script.run);
+    function onScanSuccess(decodedText){
+        if (!isScanning) return;
+        if (scanner) {
+            try { scanner.clear(); } catch(e) {}
+            scanner = null;
+            isScanning = false;
+        }
+        document.getElementById('btn-redemarrer').style.display = 'block';
 
-	// Scanner init
-	function demarrerScanner(){
-		if (typeof Html5QrcodeScanner === 'undefined') {
-			document.getElementById('reader').innerHTML = '<div style="padding:20px;color:#ef4444">Bibliothèque QR introuvable</div>';
-			return;
-		}
-		if (scanner){ try { scanner.clear(); } catch(e){} scanner=null; }
-		document.getElementById('result').innerHTML=''; document.getElementById('btn-redemarrer').style.display='none';
-		try {
-			scanner = new Html5QrcodeScanner('reader',{ qrbox:{width:250,height:250}, fps:20 });
-			scanner.render(onScanSuccess, onScanError); scannerActif=true; isScanning=true;
-		} catch(e){ document.getElementById('reader').innerHTML = '<div style="padding:20px;color:#ef4444">Erreur démarrage scanner</div>'; }
-	}
+        var matricule = (decodedText || '').toString().split('|')[0].trim() || (decodedText || '').toString().trim();
+        document.getElementById('result').innerHTML = '<div class="result-card" style="background: rgba(34,197,94,0.08); border-color: rgba(34,197,94,0.4);"><div class="result-header"><span id="result-icon">📷</span><h2 id="result-title" style="color:#166534;">QR détecté</h2></div><div style="color:#166534; font-weight:700;">' + matricule + '</div></div>';
+        processDecodedText(matricule);
+    }
 
-	function onScanSuccess(decodedText){ if (!isScanning) return; if (scanner){ try{scanner.clear()}catch(e){} scannerActif=false; isScanning=false; document.getElementById('btn-redemarrer').style.display='block'; }
-		var matricule = decodedText.split('|')[0]||decodedText;
-		document.getElementById('result').innerHTML = '<div style="background:#d1fae5;padding:15px;border-radius:8px;color:#065f46">✅ QR Code détecté: <strong>'+matricule+'</strong></div>';
-		processDecodedText(matricule);
-	}
+    function onScanError(err){
+        try {
+            var s = String(err || '');
+            if (s.indexOf('QR code parse error') !== -1 || s.indexOf('No MultiFormat Readers were able') !== -1) return;
+        } catch (e) {}
+        console.debug('scan err', err);
+    }
 
-	function onScanError(err){
-		// html5-qrcode envoie beaucoup d'erreurs mineures (QR code parse error). On ignore les erreurs parse pour éviter le spam.
-		try {
-			var s = String(err || '');
-			if (s.indexOf('QR code parse error') !== -1 || s.indexOf('No MultiFormat Readers were able') !== -1) return;
-		} catch(e) {}
-		console.debug('scan err',err);
-	}
+    function processDecodedText(matricule){
+        if (!matricule) {
+            afficherErreur('Veuillez saisir un matricule ou scanner un QR valide.');
+            return;
+        }
 
-	window.redemarrerScanner = function(){ document.getElementById('result').innerHTML=''; document.getElementById('btn-redemarrer').style.display='none'; if (scanner){ try{scanner.clear()}catch(e){} scanner=null;} setTimeout(demarrerScanner,500); };
+        document.getElementById('result').innerHTML = '<div class="result-card"><div class="result-header"><span id="result-icon">⏳</span><h2 id="result-title" style="color:#1d4ed8;">Vérification...</h2></div><div style="color:#1d4ed8; font-weight:600;">Mode : ' + getModeLabel() + '</div></div>';
 
-	window.entrerManuellement = function(){ var input = document.getElementById('matricule-manuel'); var matricule = input.value.trim(); if (!matricule){ afficherToast('Veuillez entrer un matricule','error'); input.focus(); return; } if (scanner){ try{scanner.clear()}catch(e){} isScanning=false;} document.getElementById('result').innerHTML=''; processDecodedText(matricule); input.value=''; };
+        if (useBackend) {
+            google.script.run
+                .withSuccessHandler(function(statut){
+                    if (!statut) {
+                        afficherErreur('❌ Matricule non trouvé dans la base');
+                        return;
+                    }
 
-	function processDecodedText(matricule){ document.getElementById('result').innerHTML='<div style="text-align:center;padding:20px">⏳ Vérification du matricule...</div>';
-		if (useBackend) {
-			google.script.run
-				.withSuccessHandler(function(statut){
-					if (statut) {
-						if (statut.estPresent) {
-							enregistrerSortieBackend(matricule);
-						} else {
-							enregistrerEntreeBackend(matricule);
-						}
-					} else {
-						afficherErreur('❌ Matricule non trouvé dans la base');
-					}
-				})
-				.withFailureHandler(function(error){ afficherErreur('Erreur: ' + (error.message || error)); })
-				.verifierStatut(matricule);
-			return;
-		}
+                    if (selectedMode === 'entree') {
+                        if (statut.estPresent) {
+                            afficherErreur('⚠️ Cette personne a déjà fait l\'entrée aujourd\'hui');
+                        } else {
+                            enregistrerEntreeBackend(matricule);
+                        }
+                        return;
+                    }
 
-		if (API_URL && API_URL.indexOf('REMPLACE_PAR_VOTRE_URL') === -1) {
-			callApi('scan', matricule, function(response){
-				if (response && response.success) {
-					handleResult(response, (response.message && response.message.indexOf('Sortie') !== -1) ? 'sortie' : 'entrée');
-				} else {
-					afficherErreur((response && response.message) ? response.message : '❌ Matricule non trouvé dans la base');
-				}
-			}, function(error){
-				afficherErreur('Erreur API: ' + (error && error.message ? error.message : 'Impossible de contacter le backend'));
-			});
-			return;
-		}
+                    if (!statut.estPresent) {
+                        afficherErreur('⚠️ Cette personne n\'a pas encore validé l\'entrée');
+                        return;
+                    }
 
-		afficherErreur('Configurez l\'URL de l\'API Apps Script dans window.API_URL.');
-	}
+                    enregistrerSortieBackend(matricule);
+                })
+                .withFailureHandler(function(error){ afficherErreur('Erreur: ' + (error.message || error)); })
+                .verifierStatut(matricule);
+            return;
+        }
 
-	function callApi(action, matricule, onSuccess, onError) {
-		var url = API_URL;
-		if (!url || url.indexOf('REMPLACE_PAR_VOTRE_URL') !== -1) {
-			if (onError) onError({ message: 'Configurez API_URL avec l\'URL de déploiement de votre Apps Script.' });
-			return;
-		}
+        if (API_URL && API_URL.indexOf('REMPLACE_PAR_VOTRE_URL') === -1) {
+            callApi('scan', matricule, function(response){
+                if (response && response.success) {
+                    handleResult(response, selectedMode === 'sortie' ? 'sortie' : 'entrée');
+                } else {
+                    afficherErreur((response && response.message) ? response.message : '❌ Matricule non trouvé dans la base');
+                }
+            }, function(error){
+                afficherErreur('Erreur API: ' + (error && error.message ? error.message : 'Impossible de contacter le backend'));
+            });
+            return;
+        }
 
-		var finalUrl = url + '?action=' + encodeURIComponent(action) + '&matricule=' + encodeURIComponent(matricule);
-		fetch(finalUrl, {
-			method: 'GET',
-			headers: { 'Accept': 'application/json' }
-		})
-		.then(function(response) {
-			if (!response.ok) {
-				throw new Error('HTTP ' + response.status);
-			}
-			return response.json();
-		})
-		.then(function(data) {
-			if (onSuccess) onSuccess(data || {});
-		})
-		.catch(function(error) {
-			if (onError) onError(error);
-		});
-	}
+        afficherErreur('Configurez l\'URL de l\'API Apps Script dans window.API_URL.');
+    }
 
-	// Backend calls (Apps Script) wrappers
-	function enregistrerEntreeBackend(matricule) {
-		google.script.run
-			.withSuccessHandler(function(result){ handleResult(result,'entrée'); })
-			.withFailureHandler(function(error){ afficherErreur('Erreur: ' + (error.message || error)); })
-			.enregistrerEntree(matricule);
-	}
+    function ajouterCollaborateur(){
+        var matricule = document.getElementById('matricule-nouveau').value.trim();
+        var nom = document.getElementById('nom-nouveau').value.trim();
+        var fonction = document.getElementById('fonction-nouveau').value.trim();
+        var codeQr = document.getElementById('codeqr-nouveau').value.trim();
 
-	function enregistrerSortieBackend(matricule) {
-		google.script.run
-			.withSuccessHandler(function(result){ handleResult(result,'sortie'); })
-			.withFailureHandler(function(error){ afficherErreur('Erreur: ' + (error.message || error)); })
-			.enregistrerSortie(matricule);
-	}
+        if (!matricule || !nom || !fonction) {
+            afficherErreur('Veuillez remplir au minimum : matricule, nom et fonction.');
+            return;
+        }
 
-	function handleResult(result,type){ if (result.success){ afficherSucces(result,type); chargerRapport(); chargerStatistiques(); } else { afficherErreur(result.message); } setTimeout(function(){ if (!isScanning && document.getElementById('btn-redemarrer').style.display==='none') redemarrerScanner(); },2000); }
+        var payload = {
+            matricule: matricule,
+            nom: nom,
+            fonction: fonction,
+            codeQr: codeQr || '-'
+        };
 
-	function afficherSucces(result,type){ var icon = type==='entrée'?'✅':'🚪'; var title = type==='entrée'?'Entrée enregistrée !':'Sortie enregistrée !'; var color = type==='entrée'?'#10b981':'#ef4444'; document.getElementById('result').innerHTML = '<div class="result-card"><div class="result-header"><span id="result-icon">'+icon+'</span><h2 id="result-title" style="color:'+color+'">'+title+'</h2></div><div id="result-content"><div class="info-item"><span class="label">Matricule:</span><span class="value">'+result.matricule+'</span></div><div class="info-item"><span class="label">Nom:</span><span class="value">'+result.nom+'</span></div><div class="info-item"><span class="label">Date:</span><span class="value">'+result.date+'</span></div><div class="info-item"><span class="label">Heure:</span><span class="value">'+result.heure+'</span></div></div></div>'; afficherToast(result.message,'success'); }
+        if (useBackend) {
+            google.script.run
+                .withSuccessHandler(function(result){
+                    if (result && result.success) {
+                        afficherSucces(result, 'ajout');
+                        document.getElementById('matricule-nouveau').value = '';
+                        document.getElementById('nom-nouveau').value = '';
+                        document.getElementById('fonction-nouveau').value = '';
+                        document.getElementById('codeqr-nouveau').value = '';
+                        chargerStatistiques();
+                        chargerRapport();
+                    } else {
+                        afficherErreur(result && result.message ? result.message : 'Impossible d\'ajouter le collaborateur.');
+                    }
+                })
+                .withFailureHandler(function(error){ afficherErreur('Erreur: ' + (error.message || error)); })
+                .ajouterEmploye(payload.matricule, payload.nom, payload.fonction, payload.codeQr);
+            return;
+        }
 
-	function afficherErreur(message){ document.getElementById('result').innerHTML = '<div class="result-card" style="border-color:#ef4444"><div class="result-header"><span style="font-size:40px">❌</span><h2 style="color:#ef4444;font-size:22px">Erreur</h2></div><div style="color:#ef4444;text-align:center;padding:10px">'+message+'</div></div>'; afficherToast(message,'error'); }
+        if (API_URL && API_URL.indexOf('REMPLACE_PAR_VOTRE_URL') === -1) {
+            fetch(API_URL + '?action=ajouter&matricule=' + encodeURIComponent(payload.matricule) + '&nom=' + encodeURIComponent(payload.nom) + '&fonction=' + encodeURIComponent(payload.fonction) + '&codeQr=' + encodeURIComponent(payload.codeQr), {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            })
+            .then(function(response) {
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return response.json();
+            })
+            .then(function(result) {
+                if (result && result.success) {
+                    afficherSucces(result, 'ajout');
+                    document.getElementById('matricule-nouveau').value = '';
+                    document.getElementById('nom-nouveau').value = '';
+                    document.getElementById('fonction-nouveau').value = '';
+                    document.getElementById('codeqr-nouveau').value = '';
+                    chargerStatistiques();
+                    chargerRapport();
+                } else {
+                    afficherErreur((result && result.message) ? result.message : 'Impossible d\'ajouter le collaborateur.');
+                }
+            })
+            .catch(function(error){
+                afficherErreur('Erreur API: ' + (error && error.message ? error.message : 'Impossible de contacter le backend'));
+            });
+            return;
+        }
 
-	function chargerStatistiques(){
-		if (!API_URL || API_URL.indexOf('REMPLACE_PAR_VOTRE_URL') !== -1) {
-			document.getElementById('total-employes').textContent = '0';
-			document.getElementById('present-aujourdhui').textContent = '0';
-			document.getElementById('absent-aujourdhui').textContent = '0';
-			document.getElementById('rapport-jour').innerHTML = '<p style="color:#666;text-align:center;">Configurez l\'URL Apps Script</p>';
-			return;
-		}
+        afficherErreur('Configurez l\'URL de l\'API Apps Script dans window.API_URL.');
+    }
 
-		fetch(API_URL + '?action=stats', {
-			method: 'GET',
-			headers: { 'Accept': 'application/json' }
-		})
-		.then(function(response) {
-			if (!response.ok) throw new Error('HTTP ' + response.status);
-			return response.json();
-		})
-		.then(function(stats) {
-			if (!stats || stats.total === undefined) {
-				throw new Error('Statistiques non disponibles');
-			}
-			document.getElementById('total-employes').textContent = stats.total;
-			document.getElementById('present-aujourdhui').textContent = stats.present;
-			document.getElementById('absent-aujourdhui').textContent = stats.absent;
-			document.getElementById('present-aujourdhui').className = 'stat-number present';
-			document.getElementById('absent-aujourdhui').className = 'stat-number absent';
-		})
-		.catch(function() {
-			document.getElementById('total-employes').textContent = '0';
-			document.getElementById('present-aujourdhui').textContent = '0';
-			document.getElementById('absent-aujourdhui').textContent = '0';
-		});
-	}
+    function callApi(action, matricule, onSuccess, onError) {
+        var url = API_URL;
+        if (!url || url.indexOf('REMPLACE_PAR_VOTRE_URL') !== -1) {
+            if (onError) onError({ message: 'Configurez API_URL avec l\'URL de déploiement de votre Apps Script.' });
+            return;
+        }
 
-	function chargerRapport(){
-		if (!API_URL || API_URL.indexOf('REMPLACE_PAR_VOTRE_URL') !== -1) {
-			var container = document.getElementById('rapport-jour');
-			container.innerHTML = '<p style="color:#666;text-align:center;">Aucune donnée. Configurez l\'URL Apps Script.</p>';
-			return;
-		}
+        var finalUrl = url + '?action=' + encodeURIComponent(action) + '&mode=' + encodeURIComponent(selectedMode) + '&matricule=' + encodeURIComponent(matricule);
+        fetch(finalUrl, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+        })
+        .then(function(response) {
+            if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+            }
+            return response.json();
+        })
+        .then(function(data) {
+            if (onSuccess) onSuccess(data || {});
+        })
+        .catch(function(error) {
+            if (onError) onError(error);
+        });
+    }
 
-		fetch(API_URL + '?action=rapport', {
-			method: 'GET',
-			headers: { 'Accept': 'application/json' }
-		})
-		.then(function(response) {
-			if (!response.ok) throw new Error('HTTP ' + response.status);
-			return response.json();
-		})
-		.then(function(result) {
-			var rapport = result && result.data ? result.data : result;
-			var container = document.getElementById('rapport-jour');
-			if (!rapport || rapport.length === 0) {
-				container.innerHTML = '<p style="color:#666;text-align:center;">Aucune activité aujourd\'hui</p>';
-				return;
-			}
-			var html = '';
-			for (var i = 0; i < rapport.length; i++) {
-				var r = rapport[i];
-				var statut = r.present ? '✅ Présent' : '❌ Sorti';
-				var heure = r.entre || r.sortie || '';
-				var statutClass = r.present ? 'statut-present' : 'statut-absent';
-				html += '<div class="rapport-item"><div><span class="nom">' + r.nom + '</span><span class="' + statutClass + '">' + statut + '</span></div><div class="heure">' + heure + '</div></div>';
-			}
-			container.innerHTML = html;
-		})
-		.catch(function() {
-			var container = document.getElementById('rapport-jour');
-			container.innerHTML = '<p style="color:#666;text-align:center;">Aucune activité aujourd\'hui</p>';
-		});
-	}
+    function enregistrerEntreeBackend(matricule) {
+        google.script.run
+            .withSuccessHandler(function(result){ handleResult(result, 'entrée'); })
+            .withFailureHandler(function(error){ afficherErreur('Erreur: ' + (error.message || error)); })
+            .enregistrerEntree(matricule);
+    }
 
-	function afficherToast(message,type){ var toast = document.createElement('div'); toast.className='toast toast-'+type; toast.textContent = message; document.body.appendChild(toast); setTimeout(function(){ if (toast.parentNode) toast.remove(); },3000); }
+    function enregistrerSortieBackend(matricule) {
+        google.script.run
+            .withSuccessHandler(function(result){ handleResult(result, 'sortie'); })
+            .withFailureHandler(function(error){ afficherErreur('Erreur: ' + (error.message || error)); })
+            .enregistrerSortie(matricule);
+    }
 
-	// Init
-	window.onload = function(){
-		chargerStatistiques();
-		chargerRapport();
-		verifierPermissionsCamera();
-		document.getElementById('matricule-manuel').addEventListener('keypress', function(e){ if (e.key==='Enter') entrerManuellement(); });
-		if (document.getElementById('reader')) {
-			demarrerScanner();
-		}
-	};
+    function handleResult(result, type){
+        if (result && result.success) {
+            afficherSucces(result, type);
+            chargerRapport();
+            chargerStatistiques();
+        } else {
+            afficherErreur((result && result.message) ? result.message : 'Erreur inconnue');
+        }
 
-	window.onbeforeunload = function(){ if (scanner){ try{scanner.clear()}catch(e){} scanner=null; } };
+        setTimeout(function(){
+            if (!isScanning && document.getElementById('btn-redemarrer') && document.getElementById('btn-redemarrer').style.display === 'none') {
+                redemarrerScanner();
+            }
+        }, 1800);
+    }
 
+    function afficherSucces(result, type){
+        var icon = type === 'entrée' ? '✅' : type === 'sortie' ? '🚪' : '👤';
+        var title = type === 'entrée' ? 'Entrée enregistrée' : type === 'sortie' ? 'Sortie enregistrée' : 'Collaborateur ajouté';
+        var color = type === 'entrée' ? '#166534' : type === 'sortie' ? '#991b1b' : '#1d4ed8';
+        document.getElementById('result').innerHTML = '<div class="result-card"><div class="result-header"><span id="result-icon">' + icon + '</span><h2 id="result-title" style="color:' + color + ';">' + title + '</h2></div><div id="result-content"><div class="info-item"><span class="label">Matricule:</span><span class="value">' + (result.matricule || '') + '</span></div><div class="info-item"><span class="label">Nom:</span><span class="value">' + (result.nom || '') + '</span></div><div class="info-item"><span class="label">Date:</span><span class="value">' + (result.date || '') + '</span></div><div class="info-item"><span class="label">Heure:</span><span class="value">' + (result.heure || '') + '</span></div></div></div>';
+        afficherToast(result.message || title, 'success');
+    }
+
+    function afficherErreur(message){
+        var clean = String(message || 'Erreur');
+        document.getElementById('result').innerHTML = '<div class="result-card" style="border:1px solid rgba(239,68,68,0.5); background: rgba(254,242,242,0.92);"><div class="result-header"><span style="font-size:36px">❌</span><h2 style="color:#991b1b; font-size:22px;">Erreur</h2></div><div style="color:#991b1b; text-align:center; padding:10px; font-weight:600;">' + clean + '</div></div>';
+        afficherToast(clean, 'error');
+    }
+
+    function afficherToast(message,type){
+        var toast = document.createElement('div');
+        toast.className = 'toast toast-' + type;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(function(){
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+        }, 3200);
+    }
+
+    function chargerStatistiques(){
+        if (!API_URL || API_URL.indexOf('REMPLACE_PAR_VOTRE_URL') !== -1) {
+            document.getElementById('total-employes').textContent = '0';
+            document.getElementById('present-aujourdhui').textContent = '0';
+            document.getElementById('absent-aujourdhui').textContent = '0';
+            document.getElementById('rapport-jour').innerHTML = '<p style="color: rgba(255,255,255,0.75); text-align:center;">Configurez l\'URL Apps Script.</p>';
+            return;
+        }
+
+        fetch(API_URL + '?action=stats', {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+        })
+        .then(function(response) {
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return response.json();
+        })
+        .then(function(stats) {
+            if (!stats || stats.total === undefined) {
+                throw new Error('Statistiques non disponibles');
+            }
+            document.getElementById('total-employes').textContent = stats.total;
+            document.getElementById('present-aujourdhui').textContent = stats.present;
+            document.getElementById('absent-aujourdhui').textContent = stats.absent;
+            document.getElementById('present-aujourdhui').className = 'stat-number present';
+            document.getElementById('absent-aujourdhui').className = 'stat-number absent';
+        })
+        .catch(function() {
+            document.getElementById('total-employes').textContent = '0';
+            document.getElementById('present-aujourdhui').textContent = '0';
+            document.getElementById('absent-aujourdhui').textContent = '0';
+        });
+    }
+
+    function chargerRapport(){
+        if (!API_URL || API_URL.indexOf('REMPLACE_PAR_VOTRE_URL') !== -1) {
+            var container = document.getElementById('rapport-jour');
+            container.innerHTML = '<p style="color: rgba(255,255,255,0.75); text-align:center;">Aucune donnée. Configurez l\'URL Apps Script.</p>';
+            return;
+        }
+
+        fetch(API_URL + '?action=rapport', {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+        })
+        .then(function(response) {
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return response.json();
+        })
+        .then(function(result) {
+            var rapport = result && result.data ? result.data : result;
+            var container = document.getElementById('rapport-jour');
+            if (!rapport || rapport.length === 0) {
+                container.innerHTML = '<p style="color: rgba(255,255,255,0.75); text-align:center;">Aucune activité aujourd\'hui</p>';
+                return;
+            }
+
+            var html = '';
+            for (var i = 0; i < rapport.length; i++) {
+                var r = rapport[i];
+                var statut = r.present ? '✅ Présent' : '🚪 Sorti';
+                var heure = r.entre || r.sortie || '';
+                var statutClass = r.present ? 'statut-present' : 'statut-absent';
+                html += '<div class="rapport-item"><div><span class="nom">' + (r.nom || '') + '</span><span class="' + statutClass + '">' + statut + '</span></div><div class="heure">' + heure + '</div></div>';
+            }
+            container.innerHTML = html;
+        })
+        .catch(function() {
+            var container = document.getElementById('rapport-jour');
+            container.innerHTML = '<p style="color: rgba(255,255,255,0.75); text-align:center;">Aucune activité aujourd\'hui</p>';
+        });
+    }
+
+    window.redemarrerScanner = function(){
+        document.getElementById('result').innerHTML = '';
+        document.getElementById('btn-redemarrer').style.display = 'none';
+        if (scanner) {
+            try { scanner.clear(); } catch(e) {}
+            scanner = null;
+        }
+        setTimeout(demarrerScanner, 300);
+    };
+
+    window.onload = function(){
+        setMode('entree');
+        document.querySelectorAll('.mode-btn').forEach(function(btn){
+            btn.addEventListener('click', function(){ setMode(btn.getAttribute('data-mode')); });
+        });
+
+        var addBtn = document.getElementById('btn-ajouter-employe');
+        if (addBtn) {
+            addBtn.addEventListener('click', ajouterCollaborateur);
+        }
+
+        chargerStatistiques();
+        chargerRapport();
+        verifierPermissionsCamera();
+
+        if (document.getElementById('reader')) {
+            demarrerScanner();
+        }
+    };
+
+    window.onbeforeunload = function(){
+        if (scanner) {
+            try { scanner.clear(); } catch(e) {}
+            scanner = null;
+        }
+    };
 })();
 
